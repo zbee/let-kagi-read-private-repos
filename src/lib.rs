@@ -16,7 +16,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     router
         .get_async("/", |_req, _ctx| async move {
             Response::ok(
-                "readprivates\n\
+                "let-kagi-read-private-repos\n\
                  GET /{owner}/{repo}/[path]?token=...\n\
                  GET /{owner}/{repo}/pulls[/:number[.diff]]?token=...\n\
                  GET /{owner}/{repo}/issues[/:number]?token=...\n\
@@ -328,7 +328,7 @@ async fn fetch_github_meta(
 
         let mut headers = Headers::new();
         headers.set("Authorization", &format!("Bearer {pat}"))?;
-        headers.set("User-Agent", "readprivates-worker")?;
+        headers.set("User-Agent", "read-privates-worker")?;
 
         if wants_diff {
             headers.set("Accept", "application/vnd.github.v3.diff")?;
