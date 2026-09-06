@@ -1,0 +1,10 @@
+name = "let-kagi-read-private-repos"
+main = "build/index.js"
+compatibility_date = "2026-09-01"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release --panic-unwind"
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "cffd131998194348a57c68f22ad06620"
