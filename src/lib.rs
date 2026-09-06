@@ -38,8 +38,8 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             fetch_github_meta(req, ctx, "issues", None, false).await
         })
         .get_async("/:owner/:repo/issues/:number", |req, ctx| async move {
-            let num = ctx.param("number").unwrap().as_str();
-            fetch_github_meta(req, ctx, "issues", Some(num), false).await
+            let num = ctx.param("number").unwrap().clone().to_string();
+            fetch_github_meta(req, ctx, "issues", Some(&num), false).await
         })
         .get_async("/:owner/:repo", |req, ctx| async move {
             fetch_github(req, ctx, String::new()).await
