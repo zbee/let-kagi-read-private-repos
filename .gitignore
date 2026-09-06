@@ -1,0 +1,14 @@
+target/
+node_modules/
+build/
+*.lock
+
+### Jetbrains ###
+.idea/
+
+### Wrangler ###
+.wrangler/
+.env*
+!.env.example
+.dev.vars*
+!.dev.vars.example
