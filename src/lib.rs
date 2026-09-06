@@ -326,7 +326,7 @@ async fn fetch_github_meta(
             format!("https://api.github.com/repos/{owner}/{repo}/{kind}")
         };
 
-        let mut headers = Headers::new();
+        let headers = Headers::new();
         headers.set("Authorization", &format!("Bearer {pat}"))?;
         headers.set("User-Agent", "read-privates-worker")?;
 
