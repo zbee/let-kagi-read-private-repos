@@ -16,13 +16,31 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     router
         .get_async("/", |_req, _ctx| async move {
             Response::ok(
-                "let-kagi-read-private-repos\n\
-                 GET /{owner}/{repo}/{path}?token=...\n\
-                 GET /dashboard?key=...",
+                "readprivates\n\
+                 GET /{owner}/{repo}/[path]?token=...\n\
+                 GET /{owner}/{repo}/pulls[/:number[.diff]]?token=...\n\
+                 GET /{owner}/{repo}/issues[/:number]?token=...\n\
+                 GET /mydash?key=...",
             )
         })
-        .get_async("/dashboard", dashboard_page)
-        .post_async("/dashboard/create", create_token)
+        .get_async("/mydash", dashboard_page)
+        .post_async("/mydash/create", create_token)
+        .get_async("/:owner/:repo/pulls", |req, ctx| async move {
+            fetch_github_meta(req, ctx, "pulls", None, false).await
+        })
+        .get_async("/:owner/:repo/pulls/:number", |req, ctx| async move {
+            let num_param = ctx.param("number").unwrap().to_string();
+            let is_diff = num_param.ends_with(".diff");
+            let num = num_param.trim_end_matches(".diff");
+            fetch_github_meta(req, ctx, "pulls", Some(num), is_diff).await
+        })
+        .get_async("/:owner/:repo/issues", |req, ctx| async move {
+            fetch_github_meta(req, ctx, "issues", None, false).await
+        })
+        .get_async("/:owner/:repo/issues/:number", |req, ctx| async move {
+            let num = ctx.param("number").unwrap().as_str();
+            fetch_github_meta(req, ctx, "issues", Some(num), false).await
+        })
         .get_async("/:owner/:repo", |req, ctx| async move {
             fetch_github(req, ctx, String::new()).await
         })
@@ -65,7 +83,7 @@ fn render_dashboard(key: &str, extra_block: &str) -> String {
       forge a token, hand it off, forget it exists
     </p>
 
-    <form method="POST" action="/dashboard/create?key={key}" class="space-y-4">
+    <form method="POST" action="/mydash/create?key={key}" class="space-y-4">
       <div>
         <label class="block text-xs uppercase tracking-wide text-zinc-500 mb-1">
           Name for this token
@@ -161,6 +179,7 @@ async fn create_token(mut req: Request, ctx: RouteContext<()>) -> Result<Respons
 
     let host = url.host_str().unwrap_or("let-kagi-read-my-private-repos.zbee.codes");
     let example = format!("https://{host}/OWNER/REPO/path/to/file?token={token}");
+    let example2 = format!("https://{host}/OWNER/REPO/pulls/123.diff?token={token}");
 
     let success_html = format!(
         r#"<div class="mt-8 pt-6 border-t border-zinc-800 animate-slide-down">
@@ -176,14 +195,18 @@ async fn create_token(mut req: Request, ctx: RouteContext<()>) -> Result<Respons
           {token}
         </div>
       </div>
-      <p class="text-xs text-zinc-500 mt-5 mb-1 uppercase tracking-wider">Example URL</p>
+      <p class="text-xs text-zinc-500 mt-5 mb-1 uppercase tracking-wider">Example URLs</p>
       <div class="bg-black p-3 rounded border border-zinc-800 font-mono text-[10px] break-all text-zinc-500 select-all">
         {example}
+      </div>
+      <div class="bg-black p-3 rounded border border-zinc-800 font-mono text-[10px] break-all text-zinc-500 select-all">
+        {example2}
       </div>
     </div>"#,
         name = name,
         token = token,
-        example = example
+        example = example,
+        example2 = example2
     );
 
     html(render_dashboard(&expected, &success_html))
@@ -270,6 +293,85 @@ async fn format_github_body(
     }
 
     Response::error("Unsupported content type", 415)
+}
+
+async fn fetch_github_meta(
+    req: Request,
+    ctx: RouteContext<()>,
+    kind: &str,
+    number: Option<&str>,
+    wants_diff: bool,
+) -> Result<Response> {
+    let url = req.url()?;
+    let Some(token) = query_param(&url, "token") else {
+        return Response::error("Missing ?token=", 401);
+    };
+
+    let kv = ctx.kv("TOKENS")?;
+    let hash = sha1_hex(&token);
+    if kv.get(&hash).json::<TokenRecord>().await?.is_none() {
+        return Response::error("Invalid token", 403);
+    }
+
+    let owner = ctx.param("owner").unwrap();
+    let repo = ctx.param("repo").unwrap();
+
+    let pats_raw = ctx.secret("GITHUB_TOKENS")?.to_string();
+    let pats = pats_raw.split(',').map(str::trim).filter(|s| !s.is_empty());
+
+    for pat in pats {
+        let api_url = if let Some(n) = number {
+            format!("https://api.github.com/repos/{owner}/{repo}/{kind}/{n}")
+        } else {
+            format!("https://api.github.com/repos/{owner}/{repo}/{kind}")
+        };
+
+        let mut headers = Headers::new();
+        headers.set("Authorization", &format!("Bearer {pat}"))?;
+        headers.set("User-Agent", "readprivates-worker")?;
+
+        if wants_diff {
+            headers.set("Accept", "application/vnd.github.v3.diff")?;
+        } else {
+            headers.set("Accept", "application/vnd.github+json")?;
+        }
+        headers.set("X-GitHub-Api-Version", "2022-11-28")?;
+
+        let mut init = RequestInit::new();
+        init.with_method(Method::Get).with_headers(headers);
+
+        let request = Request::new_with_init(&api_url, &init)?;
+        let mut gh_response = Fetch::Request(request).send().await?;
+
+        if gh_response.status_code() == 200 {
+            if wants_diff {
+                let diff_text = gh_response.text().await?;
+                return plain_text(diff_text);
+            } else {
+                let body: serde_json::Value = gh_response.json().await?;
+                if number.is_some() {
+                    let title = body["title"].as_str().unwrap_or("No title");
+                    let state = body["state"].as_str().unwrap_or("unknown state");
+                    let body_text = body["body"].as_str().unwrap_or("No description provided.");
+                    let out = format!("Title: {title}\nState: {state}\n\nDescription:\n{body_text}\n");
+                    return plain_text(out);
+                } else {
+                    if let Some(items) = body.as_array() {
+                        let mut out = format!("List of {kind} for {owner}/{repo}\n\n");
+                        for item in items {
+                            let num = item["number"].as_i64().unwrap_or(0);
+                            let title = item["title"].as_str().unwrap_or("?");
+                            let state = item["state"].as_str().unwrap_or("?");
+                            out.push_str(&format!("#{num} [{state}] {title}\n"));
+                        }
+                        return plain_text(out);
+                    }
+                }
+            }
+        }
+    }
+
+    Response::error("Not found in any configured account/org", 404)
 }
 
 // --- helpers --------------------------------------------------------
