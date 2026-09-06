@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use worker::*;
+use rand::Rng;
 
 #[derive(Serialize, Deserialize)]
 struct TokenRecord {
@@ -387,9 +388,8 @@ fn sha1_hex(input: &str) -> String {
 }
 
 fn generate_token() -> String {
-    use rand::RngCore;
     let mut bytes = [0u8; 24];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
