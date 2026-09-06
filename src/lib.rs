@@ -20,8 +20,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 "let-kagi-read-private-repos\n\
                  GET /{owner}/{repo}/[path]?token=...\n\
                  GET /{owner}/{repo}/pulls[/:number[.diff]]?token=...\n\
-                 GET /{owner}/{repo}/issues[/:number]?token=...\n\
-                 GET /mydash?key=...",
+                 GET /{owner}/{repo}/issues[/:number]?token=...",
             )
         })
         .get_async("/mydash", dashboard_page)
