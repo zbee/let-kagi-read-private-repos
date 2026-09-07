@@ -12,9 +12,7 @@ struct TokenRecord {
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let router = Router::new();
-
-    router
+    let router = Router::new()
         .get_async("/", |_req, _ctx| async move {
             Response::ok(
                 "let-kagi-read-private-repos\n\
@@ -47,9 +45,14 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/:owner/:repo/*path", |req, ctx| async move {
             let path = ctx.param("path").cloned().unwrap_or_default();
             fetch_github(req, ctx, path).await
-        })
-        .run(req, env)
-        .await
+        });
+    let mut req = req.clone_mut()?;
+    let path = req.path_mut()?;
+    if path.len() > 1 {
+        *path = path.trim_end_matches('/').to_string();
+    }
+
+    router.run(req, env).await
 }
 
 // --- dashboard --------------------------------------------------------
